@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure QR Code Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+            text-align: center;
+        }
+
+        .subtitle {
+            color: #666;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        input[type="url"],
+        textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 15px;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+
+        input[type="url"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: #999;
+            margin-top: 5px;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .result {
+            margin-top: 30px;
+            text-align: center;
+            display: none;
+        }
+
+        .result.show {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .qr-image {
+            max-width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin: 20px 0;
+        }
+
+        .download-btn {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            margin-top: 15px;
+        }
+
+        .download-btn:hover {
+            box-shadow: 0 10px 20px rgba(17, 153, 142, 0.3);
+        }
+
+        .info-box {
+            background: #f0f4ff;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 13px;
+            color: #555;
+        }
+
+        .info-box strong {
+            color: #667eea;
+        }
+
+        .error {
+            background: #ffe0e0;
+            border-left: 4px solid #ff4444;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            color: #cc0000;
+            display: none;
+        }
+
+        .error.show {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+            display: none;
+        }
+
+        .loader.show {
+            display: block;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔒 Secure QR Generator</h1>
+        <p class="subtitle">Create one-time use QR codes with URL masking</p>
+
+        <form id="qrForm">
+            <div class="form-group">
+                <label for="url">Target URL *</label>
+                <input 
+                    type="url" 
+                    id="url" 
+                    name="url" 
+                    placeholder="https://example.com" 
+                    required
+                >
+                <p class="hint">The URL users will see content from (hidden in address bar)</p>
+            </div>
+
+            <div class="form-group">
+                <label for="metadata">Metadata (Optional)</label>
+                <textarea 
+                    id="metadata" 
+                    name="metadata" 
+                    placeholder='{"ticket_id": "T12345", "event": "Concert 2026"}'
+                ></textarea>
+                <p class="hint">Optional JSON metadata to encrypt and store</p>
+            </div>
+
+            <button type="submit" id="generateBtn">
+                🎯 Generate QR Code
+            </button>
+        </form>
+
+        <div class="loader" id="loader"></div>
+        <div class="error" id="error"></div>
+
+        <div class="result" id="result">
+            <img id="qrImage" class="qr-image" alt="QR Code">
+            <button class="download-btn" id="downloadBtn">
+                📥 Download QR Code
+            </button>
+            <div class="info-box">
+                <strong>✅ QR Code Created!</strong><br>
+                • One-time use only<br>
+                • Target URL is masked<br>
+                • Expires after first scan
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('qrForm');
+        const loader = document.getElementById('loader');
+        const error = document.getElementById('error');
+        const result = document.getElementById('result');
+        const qrImage = document.getElementById('qrImage');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const generateBtn = document.getElementById('generateBtn');
+
+        let qrBlob = null;
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            // Hide previous results/errors
+            result.classList.remove('show');
+            error.classList.remove('show');
+            loader.classList.add('show');
+            generateBtn.disabled = true;
+
+            const url = document.getElementById('url').value;
+            const metadataText = document.getElementById('metadata').value.trim();
+
+            // Prepare request body
+            const requestBody = { url };
+
+            // Parse metadata if provided
+            if (metadataText) {
+                try {
+                    requestBody.data = JSON.parse(metadataText);
+                } catch (e) {
+                    showError('Invalid JSON in metadata field');
+                    loader.classList.remove('show');
+                    generateBtn.disabled = false;
+                    return;
+                }
+            }
+
+            try {
+                const response = await fetch('http://127.0.0.1:8000/create-qr', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+
+                // Get the QR code image
+                qrBlob = await response.blob();
+                const imageUrl = URL.createObjectURL(qrBlob);
+
+                // Display the QR code
+                qrImage.src = imageUrl;
+                result.classList.add('show');
+
+            } catch (err) {
+                showError(`Failed to generate QR code: ${err.message}`);
+            } finally {
+                loader.classList.remove('show');
+                generateBtn.disabled = false;
+            }
+        });
+
+        downloadBtn.addEventListener('click', () => {
+            if (!qrBlob) return;
+
+            const url = URL.createObjectURL(qrBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `qr-code-${Date.now()}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        function showError(message) {
+            error.textContent = message;
+            error.classList.add('show');
+        }
+    </script>
+</body>
+</html>
