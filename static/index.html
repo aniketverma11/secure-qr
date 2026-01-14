@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -131,6 +132,7 @@
                 opacity: 0;
                 transform: translateY(10px);
             }
+
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -198,11 +200,17 @@
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <h1>🔒 Secure QR Generator</h1>
@@ -211,23 +219,14 @@
         <form id="qrForm">
             <div class="form-group">
                 <label for="url">Target URL *</label>
-                <input 
-                    type="url" 
-                    id="url" 
-                    name="url" 
-                    placeholder="https://example.com" 
-                    required
-                >
+                <input type="url" id="url" name="url" placeholder="https://example.com" required>
                 <p class="hint">The URL users will see content from (hidden in address bar)</p>
             </div>
 
             <div class="form-group">
                 <label for="metadata">Metadata (Optional)</label>
-                <textarea 
-                    id="metadata" 
-                    name="metadata" 
-                    placeholder='{"ticket_id": "T12345", "event": "Concert 2026"}'
-                ></textarea>
+                <textarea id="metadata" name="metadata"
+                    placeholder='{"ticket_id": "T12345", "event": "Concert 2026"}'></textarea>
                 <p class="hint">Optional JSON metadata to encrypt and store</p>
             </div>
 
@@ -292,7 +291,8 @@
             }
 
             try {
-                const response = await fetch('http://127.0.0.1:8000/create-qr', {
+                // Use relative URL to work with both localhost and production
+                const response = await fetch('/create-qr', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -339,4 +339,5 @@
         }
     </script>
 </body>
+
 </html>

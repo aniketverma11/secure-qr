@@ -1,8 +1,17 @@
+import os
 import qrcode
 from io import BytesIO
+from dotenv import load_dotenv
 
-def generate_qr_code(qr_id: str, base_url: str = "http://127.0.0.1:8000") -> bytes:
+# Load environment variables
+load_dotenv()
+
+def generate_qr_code(qr_id: str, base_url: str = None) -> bytes:
     """Generate QR code containing the decrypt URL and return as PNG bytes."""
+    # Use provided base_url, or get from environment, or fallback to localhost
+    if base_url is None:
+        base_url = os.getenv("BASE_URL", "http://127.0.0.1:8000")
+    
     # Create the URL that will be embedded in QR code
     decrypt_url = f"{base_url}/decrypt/{qr_id}"
     
