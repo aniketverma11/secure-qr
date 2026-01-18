@@ -4,13 +4,27 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
-from fastapi.responses import Response, FileResponse
+from fastapi.responses import Response, FileResponse, RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr
 from qr_utils import generate_qr_code
 import os
 
 app = FastAPI(title="Secure PDF QR System")
+
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Serve static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Security
 security = HTTPBearer()
@@ -296,6 +310,12 @@ async def verify_and_get_pdf(
             "X-Scan-Limit": str(scan_limit)
         }
     )
+
+
+@app.get("/")
+async def root():
+    """Redirect to the frontend application."""
+    return RedirectResponse(url="/static/index.html")
 
 @app.get("/health")
 async def health_check():
