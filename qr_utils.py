@@ -6,14 +6,14 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-def generate_qr_code(qr_id: str, base_url: str = None) -> bytes:
-    """Generate QR code containing the decrypt URL and return as PNG bytes."""
+def generate_qr_code(unique_id: str, base_url: str = None) -> bytes:
+    """Generate QR code containing the verify URL and return as PNG bytes."""
     # Use provided base_url, or get from environment, or fallback to localhost
     if base_url is None:
         base_url = os.getenv("BASE_URL", "http://127.0.0.1:8000")
     
     # Create the URL that will be embedded in QR code
-    decrypt_url = f"{base_url}/decrypt/{qr_id}"
+    verify_url = f"{base_url}/verify/{unique_id}"
     
     # Create QR code
     qr = qrcode.QRCode(
@@ -22,7 +22,7 @@ def generate_qr_code(qr_id: str, base_url: str = None) -> bytes:
         box_size=10,
         border=4,
     )
-    qr.add_data(decrypt_url)
+    qr.add_data(verify_url)
     qr.make(fit=True)
     
     # Create image

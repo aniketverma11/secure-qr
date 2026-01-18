@@ -1,20 +1,14 @@
-# 🔒 Secure QR Code Validation System
+# 🔒 Secure PDF QR System
 
-A FastAPI-based system that creates **one-time use QR codes** that validate through your server before redirecting to the target URL.
+A FastAPI-based system for secure PDF document management with QR code access control and scan limits.
 
-## ✨ Key Feature
+## ✨ Features
 
-**You only provide the target URL** - the system automatically wraps it in a validation layer:
-
-```bash
-# You provide:
-"https://google.com"
-
-# QR code contains:
-"http://your-system.com/decrypt/abc-123"
-
-# User scans → validates → redirects to Google
-```
+- 🔐 **User Authentication** - Email/password login with JWT tokens
+- 📄 **PDF Upload** - Upload PDFs and generate unique QR codes
+- 🎫 **Scan Limits** - Control how many times a QR can be scanned
+- 🔍 **Verification** - Secure PDF access with token validation
+- 💾 **SQLite Database** - Lightweight, file-based storage
 
 ---
 
@@ -33,17 +27,125 @@ pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 3. Create Your First QR Code
+### 3. Register & Login
 ```bash
-curl -X POST "http://127.0.0.1:8000/create-qr" \
+# Register
+curl -X POST "http://127.0.0.1:8000/register" \
   -H "Content-Type: application/json" \
-  -d '{"url": "https://google.com"}' \
-  --output my_qr.png
+  -d '{"email": "user@example.com", "password": "yourpassword"}'
+
+# Login
+curl -X POST "http://127.0.0.1:8000/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "yourpassword"}'
 ```
 
-### 4. Scan the QR Code
-- **First scan**: ✅ Redirects to Google
-- **Second scan**: ❌ "QR code expired"
+### 4. Upload PDF & Generate QR
+```bash
+curl -X POST "http://127.0.0.1:8000/upload-pdf" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -F "file=@document.pdf" \
+  -F "scan_limit=5"
+```
+
+### 5. Verify & Download PDF
+```bash
+curl -X GET "http://127.0.0.1:8000/verify/UNIQUE_ID" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  --output downloaded.pdf
+```
+
+---
+
+## 📋 API Endpoints
+
+### POST /register
+Register a new user account.
+
+**Request:**
+```json
+{
+  "email": "user@example.com",
+  "password": "yourpassword"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "User registered successfully",
+  "email": "user@example.com"
+}
+```
+
+---
+
+### POST /login
+Login and receive access token.
+
+**Request:**
+```json
+{
+  "email": "user@example.com",
+  "password": "yourpassword"
+}
+```
+
+**Response:**
+```json
+{
+  "access_token": "your-token-here",
+  "token_type": "bearer"
+}
+```
+
+---
+
+### POST /upload-pdf
+Upload PDF and generate QR code (requires authentication).
+
+**Headers:**
+```
+Authorization: Bearer YOUR_ACCESS_TOKEN
+```
+
+**Form Data:**
+- `file`: PDF file
+- `scan_limit`: Maximum number of scans (integer)
+
+**Response:**
+```json
+{
+  "unique_id": "abc123xyz",
+  "filename": "document.pdf",
+  "scan_limit": 5,
+  "scan_count": 0,
+  "qr_url": "http://127.0.0.1:8000/qr/abc123xyz"
+}
+```
+
+---
+
+### GET /qr/{unique_id}
+Get QR code image for a document.
+
+**Response:** PNG image
+
+---
+
+### GET /verify/{unique_id}
+Verify QR and download PDF (requires authentication).
+
+**Headers:**
+```
+Authorization: Bearer YOUR_ACCESS_TOKEN
+```
+
+**Response:** PDF file (if scan limit not exceeded)
+
+**Headers in Response:**
+- `X-Scan-Count`: Current scan count
+- `X-Scan-Limit`: Maximum scan limit
 
 ---
 
@@ -51,101 +153,86 @@ curl -X POST "http://127.0.0.1:8000/create-qr" \
 
 ```
 ┌──────────────┐
-│ You Create   │  POST {"url": "https://google.com"}
-│   QR Code    │
+│ 1. Register  │  POST /register
+│   & Login    │  POST /login → Get access token
 └──────┬───────┘
        │
        ▼
 ┌──────────────────────────────────────┐
-│ System Generates QR                  │
-│ Contains: your-system/decrypt/abc123 │
-│ (NOT the final URL!)                 │
+│ 2. Upload PDF                        │
+│ POST /upload-pdf                     │
+│ - Save PDF to SQLite                 │
+│ - Generate unique ID                 │
+│ - Create QR code with verify URL     │
+│ - Set scan limit                     │
 └──────┬───────────────────────────────┘
        │
        ▼
 ┌──────────────┐
-│ User Scans   │  → Goes to your system first
+│ 3. User      │  Scans QR code
+│ Scans QR     │  → Goes to /verify/{unique_id}
 └──────┬───────┘
        │
        ▼
 ┌──────────────┐
-│ System       │  ✓ Validates first scan
-│ Validates    │  ✓ Marks as used
+│ 4. System    │  ✓ Validates access token
+│ Verifies     │  ✓ Checks scan limit
+│              │  ✓ Increments scan count
 └──────┬───────┘
        │
        ▼
 ┌──────────────┐
-│ Redirects    │  → User arrives at https://google.com
+│ 5. Returns   │  → User gets PDF file
+│ PDF          │  (if limit not exceeded)
 └──────────────┘
 ```
 
 ---
 
-## 📋 Features
+## 🗄️ Database Schema
 
-✅ **One-time use** - Expires after first scan  
-✅ **Server validation** - All scans go through your system  
-✅ **AES-256 encryption** - Optional metadata encryption  
-✅ **Simple API** - Just provide the target URL  
-✅ **Fast** - In-memory storage, no database needed  
-✅ **Secure** - Unique IDs, immediate expiry  
+### users
+- `id` - Primary key
+- `email` - Unique email address
+- `password_hash` - SHA-256 hashed password
+- `created_at` - Registration timestamp
 
----
+### tokens
+- `id` - Primary key
+- `user_id` - Foreign key to users
+- `token` - Access token
+- `expires_at` - Token expiration time
+- `created_at` - Creation timestamp
 
-## 📚 API Endpoints
-
-### POST /create-qr
-Create a secure QR code
-
-**Request:**
-```json
-{
-  "url": "https://your-target-url.com",
-  "data": {  // Optional metadata
-    "key": "value"
-  }
-}
-```
-
-**Response:** PNG image of QR code
-
----
-
-### GET /decrypt/{qr_id}
-Validation endpoint (embedded in QR code)
-
-- **First access**: Redirects to target URL
-- **Subsequent access**: HTTP 410 "QR code expired"
-
----
-
-## 📖 Documentation
-
-- **[USAGE.md](USAGE.md)** - Detailed usage guide with examples
-- **[API Reference](http://127.0.0.1:8000/docs)** - Interactive API docs (when server is running)
+### documents
+- `id` - Primary key
+- `unique_id` - Unique identifier for QR code
+- `user_id` - Foreign key to users
+- `filename` - Original PDF filename
+- `pdf_data` - Binary PDF data
+- `scan_limit` - Maximum allowed scans
+- `scan_count` - Current scan count
+- `created_at` - Upload timestamp
 
 ---
 
 ## 🛠️ Tech Stack
 
 - **FastAPI** - Web framework
+- **SQLite** - Database
 - **qrcode** - QR code generation
-- **cryptography** - AES-256 encryption
 - **Pydantic** - Data validation
+- **HTTPBearer** - Token authentication
 
 ---
 
-## 📁 Project Structure
+## 🎯 Use Cases
 
-```
-secury-poc/
-├── main.py           # FastAPI app with endpoints
-├── qr_utils.py       # QR code generation
-├── crypto_utils.py   # AES encryption
-├── requirements.txt  # Dependencies
-├── README.md         # This file
-└── USAGE.md          # Detailed usage guide
-```
+- **Event Tickets** - Limited-use PDF tickets
+- **Document Sharing** - Controlled access to sensitive PDFs
+- **Certificates** - Verify authenticity with scan limits
+- **Coupons** - One-time or limited-use vouchers
+- **Access Passes** - Temporary document access
 
 ---
 
@@ -153,77 +240,52 @@ secury-poc/
 
 ### Change Base URL (for production)
 
-Edit `qr_utils.py`:
-```python
-def generate_qr_code(qr_id: str, base_url: str = "https://your-domain.com"):
-    # ...
+Edit `.env`:
 ```
-
----
-
-## 🎯 Use Cases
-
-- **Event tickets** - One-time entry validation
-- **Secure links** - Prevent link sharing
-- **Product authentication** - Verify genuine products
-- **Access tokens** - Single-use access codes
-- **Download links** - One-time file downloads
+BASE_URL=https://your-domain.com
+```
 
 ---
 
 ## 🚀 Production Checklist
 
-- [ ] Update `base_url` in `qr_utils.py`
-- [ ] Replace in-memory storage with Redis/PostgreSQL
-- [ ] Add authentication to `/create-qr` endpoint
-- [ ] Enable HTTPS with SSL certificates
-- [ ] Add rate limiting
-- [ ] Set up logging and monitoring
-- [ ] Configure CORS if needed
+- [ ] Update `BASE_URL` in `.env`
+- [ ] Use secure password hashing (bcrypt instead of SHA-256)
+- [ ] Add HTTPS/SSL certificates
+- [ ] Implement rate limiting
+- [ ] Add logging and monitoring
+- [ ] Configure CORS properly
+- [ ] Use PostgreSQL instead of SQLite
+- [ ] Add password strength validation
+- [ ] Implement refresh tokens
+- [ ] Add email verification
 
 ---
 
-## 📝 Example Usage
+## 📝 Example Workflow
 
-### Event Ticket
 ```bash
-curl -X POST "http://127.0.0.1:8000/create-qr" \
+# 1. Register
+curl -X POST "http://127.0.0.1:8000/register" \
   -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://event.com/ticket-validated",
-    "data": {
-      "ticket_id": "T12345",
-      "event": "Concert 2026"
-    }
-  }' \
-  --output ticket.png
-```
+  -d '{"email": "test@example.com", "password": "test123"}'
 
-### Secure Link
-```bash
-curl -X POST "http://127.0.0.1:8000/create-qr" \
+# 2. Login
+TOKEN=$(curl -X POST "http://127.0.0.1:8000/login" \
   -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://secure-portal.com/dashboard"
-  }' \
-  --output secure_link.png
-```
+  -d '{"email": "test@example.com", "password": "test123"}' \
+  | jq -r '.access_token')
 
----
+# 3. Upload PDF with 3 scan limit
+curl -X POST "http://127.0.0.1:8000/upload-pdf" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@mydoc.pdf" \
+  -F "scan_limit=3"
 
-## 🔍 Health Check
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-Response:
-```json
-{
-  "status": "healthy",
-  "active_qr_codes": 10,
-  "expired_qr_codes": 5
-}
+# 4. Verify and download (can do this 3 times)
+curl -X GET "http://127.0.0.1:8000/verify/UNIQUE_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  --output downloaded.pdf
 ```
 
 ---
@@ -231,12 +293,6 @@ Response:
 ## 📄 License
 
 MIT License - Feel free to use in your projects!
-
----
-
-## 🤝 Contributing
-
-Contributions welcome! Please feel free to submit a Pull Request.
 
 ---
 

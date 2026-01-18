@@ -1,7 +1,6 @@
 fastapi
 uvicorn[standard]
-cryptography
 qrcode[pil]
-python-multipart
-httpx
 python-dotenv
+python-multipart
+pydantic[email]
