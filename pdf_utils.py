@@ -45,6 +45,10 @@ def stamp_pdf_with_qr(pdf_bytes: bytes, qr_image_bytes: bytes) -> bytes:
         page_width, page_height = 595, 842
         
     # Prepare QR image
+    # CRITICAL: Do NOT resize the PIL image itself (e.g. img.resize()).
+    # Resizing destroys the pixel-perfect steganography (ghost dots, watermarks).
+    # Instead, we serve the original full-resolution image to ReportLab and tell 
+    # ReportLab to display it at a smaller size (scaling).
     qr_image = Image.open(io.BytesIO(qr_image_bytes))
     
     # Create the overlay PDF in memory
@@ -52,17 +56,18 @@ def stamp_pdf_with_qr(pdf_bytes: bytes, qr_image_bytes: bytes) -> bytes:
     c = canvas.Canvas(packet, pagesize=(page_width, page_height))
     
     # QR Code Settings
-    qr_size = 100  # 100 points (approx 1.4 inches)
+    qr_display_size = 100  # 100 points (approx 1.4 inches)
     margin = 20
     
     # Position: Bottom Right
     # (0,0) is bottom-left
-    x = page_width - qr_size - margin
+    x = page_width - qr_display_size - margin
     y = margin # Bottom margin
     
     # Draw QR code
-    # reportlab ImageReader helps handle PIL images
-    c.drawImage(ImageReader(qr_image), x, y, width=qr_size, height=qr_size, mask='auto')
+    # We pass the original full-res image. ReportLab scales it to fit (width, height)
+    # This preserves the underlying pixel data in the PDF object.
+    c.drawImage(ImageReader(qr_image), x, y, width=qr_display_size, height=qr_display_size, mask='auto', preserveAspectRatio=True)
     
     c.save()
     packet.seek(0)
@@ -82,7 +87,11 @@ def stamp_pdf_with_qr(pdf_bytes: bytes, qr_image_bytes: bytes) -> bytes:
 
 def extract_qr_from_pdf(pdf_bytes: bytes) -> Tuple[Optional[np.ndarray], Optional[str]]:
     """
-    Convert PDF pages to images and search for a QR code.
+    Extract QR code from PDF.
+    
+    Strategy:
+    1. Try to extract raw embedded images directly (preserves steganography).
+    2. Fallback to rendering page as image (for scanned PDFs).
     
     Args:
         pdf_bytes: PDF file bytes
@@ -90,31 +99,76 @@ def extract_qr_from_pdf(pdf_bytes: bytes) -> Tuple[Optional[np.ndarray], Optiona
     Returns:
         Tuple (cropped_qr_numpy_array, decoded_text) or (None, None) if not found
     """
+    detector = cv2.QRCodeDetector()
+    
+    # Strategy 1: Direct Image Extraction (Best for digital verification)
     try:
-        # Convert PDF pages to images
-        # We use a lower DPI for speed, e.g. 200
-        images = convert_from_bytes(pdf_bytes, dpi=200)
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        for page in reader.pages:
+            if '/XObject' in page['/Resources']:
+                xObject = page['/Resources']['/XObject'].get_object()
+                for obj in xObject:
+                    if xObject[obj]['/Subtype'] == '/Image':
+                        try:
+                            # Extract raw image bytes
+                            img_obj = xObject[obj]
+                            data = img_obj.get_data()
+                            
+                            # Convert to PIL Image
+                            # Note: handle different filters/color spaces if needed
+                            # pypdf's get_data() usually handles simple cases well
+                            
+                            # We'll rely on PIL to open the raw data if possible,
+                            # or reconstruct from bytes if it's raw pixel data.
+                            # pypdf images can be complex. simpler to use PIL on extracted bytes if robust.
+                            # Let's try simple PIL open first.
+                            try:
+                                pil_image = Image.open(io.BytesIO(data))
+                            except:
+                                # Sometimes data is raw pixels, not a file format.
+                                # pypdf helper might be needed.
+                                continue
+                                
+                            # Convert to numpy/opencv
+                            cv_image = np.array(pil_image.convert('RGB'))
+                            cv_image = cv_image[:, :, ::-1].copy() # RGB to BGR
+                            
+                            # Detect
+                            decoded_text, points, straight_qrcode = detector.detectAndDecode(cv_image)
+                            
+                            if decoded_text:
+                                # For direct extraction, verify the ORIGINAL image, not the crop
+                                # straight_qrcode is a re-sampled crop.
+                                # The verification logic prefers the original input if it's a pure QR code image.
+                                # If the extracted image contains JUST the QR code (which it should for our stamped PDFs),
+                                # we should return the whole image to preserve steganography.
+                                
+                                # Convert back to RGB
+                                rgb_result = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+                                return rgb_result, decoded_text
+                                
+                        except Exception as e:
+                            print(f"Failed to process embedded image: {e}")
+                            continue
+    except Exception as e:
+        print(f"Direct extraction failed: {e}")
+
+    # Strategy 2: Render Page (Fallback)
+    try:
+        # Higher DPI for better quality
+        images = convert_from_bytes(pdf_bytes, dpi=300)
     except Exception as e:
         print(f"Error converting PDF to images: {e}")
         return None, None
         
-    detector = cv2.QRCodeDetector()
-    
     for i, pil_image in enumerate(images):
-        # Convert PIL to opencv (numpy)
         cv_image = np.array(pil_image)
-        # Convert RGB to BGR
         cv_image = cv_image[:, :, ::-1].copy()
         
-        # Detect and decode
         decoded_text, points, straight_qrcode = detector.detectAndDecode(cv_image)
         
         if decoded_text:
-            # QR Found!
-            # straight_qrcode is the rectified, cropped QR code
             if straight_qrcode is not None:
-                # Convert back to RGB for consistency with our system
-                # straight_qrcode comes out as grayscale or uint8 usually
                 if len(straight_qrcode.shape) == 2:
                     straight_qrcode = cv2.cvtColor(straight_qrcode, cv2.COLOR_GRAY2RGB)
                 elif straight_qrcode.shape[2] == 4:
@@ -123,12 +177,5 @@ def extract_qr_from_pdf(pdf_bytes: bytes) -> Tuple[Optional[np.ndarray], Optiona
                     straight_qrcode = cv2.cvtColor(straight_qrcode, cv2.COLOR_BGR2RGB)
                     
                 return straight_qrcode, decoded_text
-                
-        # Fallback: sometimes detectAndDecode fails to provide strict crop
-        # We can try to manually crop using 'points' if points found
-        if points is not None and not decoded_text:
-            # Try to decode again with robust settings or other libs if needed?
-            # For now, we return None if text not decoded
-            pass
             
     return None, None
