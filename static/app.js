@@ -1,5 +1,6 @@
 // API Configuration
-const API_BASE = 'http://localhost:8000';
+// const API_BASE = 'http://localhost:8000';
+const API_BASE = 'https://dev-be.secury.ai';
 
 // State Management
 let authToken = localStorage.getItem('authToken');
