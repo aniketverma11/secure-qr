@@ -10,3 +10,6 @@ piexif
 pillow
 python-multipart
 pydantic[email]
+pypdf
+pdf2image
+reportlab

@@ -134,7 +134,8 @@
                     </div>
                     <div class="button-group">
                         <button class="btn-primary" onclick="downloadQR()">Download QR Code</button>
-                        <button class="btn-secondary" onclick="resetUpload()">Upload Another</button>
+                        <button class="btn-secondary" onclick="downloadStampedPDF()">📄 Embed QR in PDF</button>
+                        <button class="btn-tertiary" onclick="resetUpload()">Upload Another</button>
                     </div>
                 </div>
             </div>
@@ -143,7 +144,7 @@
             <div id="scanSection" class="content-section">
                 <div class="card">
                     <h2>📷 Scan & Verify QR Code</h2>
-                    <p class="section-description">Scan a QR code with your camera or upload an image to verify its
+                    <p class="section-description">Scan a QR code with your camera or upload an image/PDF to verify its
                         authenticity and access the document.</p>
 
                     <!-- Camera Scanner -->
@@ -172,12 +173,11 @@
 
                     <!-- Upload QR Image -->
                     <div class="upload-verify-section">
-                        <h3>Upload QR Code Image</h3>
-                        <p class="upload-hint">Upload a photo of the QR code - we'll automatically detect and verify it
-                        </p>
+                        <h3>Upload QR or Stamped PDF</h3>
+                        <p class="upload-hint">Upload a QR image OR a PDF with the QR code inside.</p>
                         <form onsubmit="verifyUploadedQR(event)" class="verify-upload-form">
                             <div class="file-upload">
-                                <input type="file" id="scanQRImage" accept="image/*" required
+                                <input type="file" id="scanQRImage" accept="image/*,.pdf" required
                                     onchange="handleQRImageUpload()">
                                 <label for="scanQRImage" class="file-label">
                                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -185,9 +185,9 @@
                                         <circle cx="8.5" cy="8.5" r="1.5" />
                                         <polyline points="21 15 16 10 5 21" />
                                     </svg>
-                                    <span id="scanFileName">Choose QR code image</span>
+                                    <span id="scanFileName">Choose Image or PDF</span>
                                 </label>
-                                <small>Upload a photo or screenshot of the QR code</small>
+                                <small>Upload a photo, screenshot, or PDF file</small>
                             </div>
 
                             <!-- Hidden field for unique ID (auto-filled) -->
@@ -306,7 +306,7 @@
     <!-- Include QR Scanner Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <script src="/static/app.js?v=2"></script>
+    <script src="/static/app.js?v=4"></script>
 </body>
 
 </html>

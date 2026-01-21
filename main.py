@@ -12,6 +12,7 @@ from pydantic import BaseModel, EmailStr
 from qr_utils import generate_qr_code
 from secure_qr_generator import generate_secure_qr_code
 from counterfeit_detector import verify_qr_code_bytes
+from pdf_utils import stamp_pdf_with_qr, extract_qr_from_pdf
 import os
 import json
 import base64
@@ -542,3 +543,129 @@ async def health_check():
         "users": user_count,
         "documents": doc_count
     }
+
+@app.get("/stamp-pdf/{unique_id}")
+async def stamp_pdf(
+    unique_id: str,
+    user_id: int = Depends(verify_token)
+):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Fetch PDF data
+    cursor.execute(
+        "SELECT pdf_data FROM documents WHERE unique_id = ?", 
+        (unique_id,)
+    )
+    result = cursor.fetchone()
+    conn.close()
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="Document not found")
+        
+    pdf_data_bytes = result[0]
+    
+    if not pdf_data_bytes:
+        raise HTTPException(status_code=404, detail="PDF content not found")
+        
+    try:
+        # Re-generate QR code image
+        verify_url = f"{os.getenv('BASE_URL', 'http://localhost:8000')}/verify/{unique_id}"
+        qr_img_bytes, _ = generate_secure_qr_code(verify_url, unique_id)
+        
+        # Stamp it
+        stamped_pdf_bytes = stamp_pdf_with_qr(pdf_data_bytes, qr_img_bytes)
+        
+        # Return as downloadable file
+        return Response(
+            content=stamped_pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=stamped_{unique_id}.pdf"}
+        )
+        
+    except Exception as e:
+        print(f"Error stamping PDF: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
+
+@app.post("/verify-pdf")
+async def verify_pdf_upload(
+    file: UploadFile = File(...)
+):
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+        
+    try:
+        content = await file.read()
+        
+        # 1. Extract QR code
+        qr_image, decoded_text = extract_qr_from_pdf(content)
+        
+        if qr_image is None or decoded_text is None:
+            return {
+                "success": False,
+                "verdict": "NO_QR_FOUND",
+                "authenticity_score": 0,
+                "details": {},
+                "warnings": ["Could not locate a readable QR code in the uploaded PDF"]
+            }
+            
+        # 2. Extract unique ID from decoded text
+        import re
+        match = re.search(r'/verify/([^/?]+)', decoded_text)
+        if not match:
+             return {
+                "success": False,
+                "verdict": "INVALID_QR",
+                "authenticity_score": 0,
+                "details": {},
+                "warnings": ["QR code found but does not contain a valid verification URL"]
+            }
+            
+        unique_id = match.group(1)
+            
+        # 3. Verify authenticity using the extracted QR image
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """
+            SELECT ghost_pattern, frequency_signature, fingerprint_hash 
+            FROM documents WHERE unique_id = ?
+            """,
+            (unique_id,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+             return {
+                "success": False,
+                "verdict": "UNKNOWN_ID",
+                "authenticity_score": 0,
+                "details": {},
+                "warnings": ["Document ID not found in database"]
+            }
+            
+        # Reconstruct metadata dict
+        security_metadata = {
+            'ghost_pattern': json.loads(row['ghost_pattern']) if row['ghost_pattern'] else {},
+            'watermark_signature': json.loads(row['frequency_signature']) if row['frequency_signature'] else [],
+            'fingerprint_hash': row['fingerprint_hash'],
+            'image_size': None
+        }
+        
+        # Note: qr_image is a numpy array (RGB)
+        from counterfeit_detector import CounterfeitDetector
+        detector = CounterfeitDetector()
+        verification_result = detector.verify_qr_authenticity(qr_image, security_metadata)
+        
+        # Add the unique_id to the result so frontend knows
+        verification_result['unique_id'] = unique_id
+        verification_result['success'] = verification_result['verdict'] == 'AUTHENTIC'
+        
+        return verification_result
+        
+    except Exception as e:
+        print(f"Error verifying PDF: {e}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")

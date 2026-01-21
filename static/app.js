@@ -1,6 +1,6 @@
 // API Configuration
-// const API_BASE = 'http://localhost:8000';
-const API_BASE = 'https://dev-be.secury.ai';
+const API_BASE = 'http://localhost:8000';
+// const API_BASE = 'https://dev-be.secury.ai';
 
 // State Management
 let authToken = localStorage.getItem('authToken');
@@ -200,6 +200,50 @@ async function downloadQR() {
     }
 }
 
+// Download Stamped PDF
+async function downloadStampedPDF() {
+    const uniqueId = document.getElementById('resultUniqueId').textContent;
+    if (!uniqueId) {
+        showToast('Error: No document ID found', 'error');
+        return;
+    }
+    
+    console.log('Initiating PDF download for ID:', uniqueId);
+    showToast('Preparing PDF with embedded QR...', 'success');
+    
+    try {
+        const response = await fetch(`${API_BASE}/stamp-pdf/${uniqueId}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `stamped_${uniqueId}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            showToast('PDF Downloaded!', 'success');
+        } else {
+            try {
+                const err = await response.json();
+                showToast(`Error: ${err.detail || 'Download failed'}`, 'error');
+            } catch (e) {
+                showToast(`Error: Download failed (${response.status})`, 'error');
+            }
+        }
+    } catch (error) {
+        console.error('Download error:', error);
+        showToast('Network error during download', 'error');
+    }
+}
+
 function resetUpload() {
     document.querySelector('.upload-form').style.display = 'block';
     document.getElementById('uploadResult').style.display = 'none';
@@ -280,15 +324,25 @@ async function handleQRImageUpload() {
         const file = fileInput.files[0];
         fileName.textContent = file.name;
         
-        // Show decoding status
+        // Reset UI
         statusDiv.style.display = 'block';
         statusDiv.className = 'decode-status decoding';
-        statusDiv.textContent = '🔍 Decoding QR code...';
         verifyButton.disabled = true;
+        
+        // Check if PDF
+        if (file.type === 'application/pdf') {
+            statusDiv.innerHTML = `📄 PDF selected.<br><small>Click "Verify" to scan document.</small>`;
+            statusDiv.className = 'decode-status success'; // Visual cue that it's ready
+            verifyButton.disabled = false;
+            uniqueIdField.value = 'PDF_UPLOAD'; // Placeholder to bypass check
+            return;
+        }
+        
+        statusDiv.textContent = '🔍 Decoding QR code...';
         
         try {
             // Attempt 1: Try HTML5 QR Code scanner
-            try {
+             try {
                 const html5QrCode = new Html5Qrcode("reader");
                 const decodedText = await html5QrCode.scanFile(file, false);
                 await html5QrCode.clear();
@@ -371,43 +425,63 @@ function scanWithJsQR(file) {
     });
 }
 
-// Verify uploaded QR code
+// Verify uploaded QR code or PDF
 async function verifyUploadedQR(event) {
     event.preventDefault();
     
     const uniqueId = document.getElementById('scanUniqueId').value.trim();
     const fileInput = document.getElementById('scanQRImage');
     
-    if (!uniqueId) {
-        showToast('Please upload a valid QR code image', 'error');
-        return;
-    }
-    
     if (!fileInput.files.length) {
-        showToast('Please select a QR code image', 'error');
+        showToast('Please select a file', 'error');
         return;
     }
     
-    // Use the secure verification endpoint
-    await verifyQRCodeSecure(uniqueId, fileInput.files[0]);
-}
-
-function onScanError(error) {
-    // Ignore scan errors (they happen frequently during scanning)
-}
-
-function verifyManualId() {
-    const uniqueId = document.getElementById('manualUniqueId').value.trim();
+    const file = fileInput.files[0];
     
-    if (!uniqueId) {
-        showToast('Please enter a unique ID', 'error');
+    // Handle PDF Verification
+    if (file.type === 'application/pdf') {
+        await verifyPDFFile(file);
         return;
     }
     
-    // Redirect to verify section
-    document.getElementById('verifyUniqueId').value = uniqueId;
-    showSection('verify');
-    showToast('Please upload the QR code image to verify', 'success');
+    // Handle Image Verification
+    if (!uniqueId || uniqueId === 'PDF_UPLOAD') {
+        showToast('Please ensure QR code is decoded first', 'error');
+        return;
+    }
+    
+    // Use the secure verification endpoint for images
+    await verifyQRCodeSecure(uniqueId, file);
+}
+
+// New: Verify full PDF file
+async function verifyPDFFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+        showToast('Scanning PDF for authentic QR...', 'success');
+        
+        // Use the new PDF verification endpoint
+        const response = await fetch(`${API_BASE}/verify-pdf`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            displaySecureScanSuccess(data);
+            showToast('✅ Authentic Document! Verified from PDF.', 'success');
+        } else {
+            displaySecureScanError(data);
+            showToast(`❌ ${data.verdict || 'Verification Failed'}`, 'error');
+        }
+    } catch (error) {
+        displayScanError('Network error: ' + error.message);
+        showToast('Network error: ' + error.message, 'error');
+    }
 }
 
 // New secure verification with QR image

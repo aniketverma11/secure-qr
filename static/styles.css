@@ -103,6 +103,23 @@ body {
     background: #475569;
 }
 
+.btn-tertiary {
+    padding: 12px 24px;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    background: transparent;
+    color: var(--text-secondary);
+    transition: all 0.3s ease;
+}
+
+.btn-tertiary:hover {
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
+}
+
 /* Auth Section */
 .auth-container {
     max-width: 450px;
