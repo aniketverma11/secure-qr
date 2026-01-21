@@ -254,59 +254,91 @@ function resetUpload() {
 }
 
 // QR Scanner
+// Global scanner reference
+let html5QrCodeGlobal = null;
+
 async function startScanner() {
-    const scannerDiv = document.getElementById('scanner');
-    const placeholder = document.getElementById('scannerPlaceholder');
-    
-    placeholder.style.display = 'none';
-    scannerDiv.style.display = 'block';
-    
+    // UI Reset
+    document.getElementById('scanner').style.display = 'block';
+    document.getElementById('scannerPlaceholder').style.display = 'none';
     document.getElementById('startScanBtn').style.display = 'none';
-    document.getElementById('stopScanBtn').style.display = 'block';
     
-    html5QrCode = new Html5Qrcode("scanner");
+    // Clear previous results
+    document.getElementById('scanResult').style.display = 'none';
+
+    html5QrCodeGlobal = new Html5Qrcode("scanner");
     
     try {
-        await html5QrCode.start(
+        await html5QrCodeGlobal.start(
             { facingMode: "environment" },
             {
                 fps: 10,
-                qrbox: { width: 250, height: 250 }
+                qrbox: { width: 250, height: 250 },
+                aspectRatio: 1.0
             },
-            onScanSuccess,
-            onScanError
+            async (decodedText, decodedResult) => {
+                // Success Callback: QR Found!
+                
+                // 1. Capture the current frame from the video stream
+                // Html5Question uses a video element internally.
+                let imageBlob = null;
+                try {
+                    // This is a hacky way to get the video element created by the library
+                    const videoElement = document.querySelector('#scanner video');
+                    if (videoElement) {
+                        const canvas = document.createElement("canvas");
+                        canvas.width = videoElement.videoWidth;
+                        canvas.height = videoElement.videoHeight;
+                        const ctx = canvas.getContext("2d");
+                        ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                        
+                        // Convert to blob
+                        imageBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+                    }
+                } catch (e) {
+                    console.error("Frame capture failed:", e);
+                }
+
+                // 2. Stop and Verify
+                handleDecodedQR(decodedText, imageBlob);
+            },
+            (errorMessage) => {
+                // Ignore parse errors, they happen every frame
+            }
         );
     } catch (err) {
-        showToast('Camera access denied or not available', 'error');
-        stopScanner();
+        showToast("Camera error: " + err, 'error');
+        document.getElementById('startScanBtn').style.display = 'block';
     }
 }
 
-function stopScanner() {
-    if (html5QrCode) {
-        html5QrCode.stop().then(() => {
-            html5QrCode.clear();
-        });
-    }
-    
-    document.getElementById('scanner').style.display = 'none';
-    document.getElementById('scannerPlaceholder').style.display = 'flex';
-    document.getElementById('startScanBtn').style.display = 'block';
-    document.getElementById('stopScanBtn').style.display = 'none';
-}
 
-function onScanSuccess(decodedText) {
-    stopScanner();
-    
+async function handleDecodedQR(decodedText, capturedImageBlob = null) {
+    if (html5QrCodeGlobal) {
+        try {
+            await html5QrCodeGlobal.stop();
+            document.getElementById('startScanBtn').style.display = 'block';
+            html5QrCodeGlobal = null;
+        } catch (e) { console.log('Stop error', e); }
+    }
+
     // Extract unique ID from URL
     const urlMatch = decodedText.match(/\/verify\/([^\/\?]+)/);
     if (urlMatch) {
-        const uniqueId = urlMatch[1];
-        // Fill in the unique ID and prompt for image upload
+         const uniqueId = urlMatch[1];
+        
+        // Populate field
         document.getElementById('scanUniqueId').value = uniqueId;
-        showToast('QR detected! Now upload the QR image to verify authenticity.', 'success');
-        // Scroll to upload section
-        document.querySelector('.upload-verify-section').scrollIntoView({ behavior: 'smooth' });
+        
+        // IF we have the captured image blob from the scanner, VERIFY IMMEDIATELY
+        if (capturedImageBlob) {
+             showToast('QR detected! Analyzing security features...', 'success');
+             await verifyQRCodeSecure(uniqueId, capturedImageBlob);
+        } else {
+             // Fallback to manual flow
+             showToast('QR detected! Now upload the QR image to verify authenticity.', 'success');
+             document.querySelector('.upload-verify-section').scrollIntoView({ behavior: 'smooth' });
+        }
     } else {
         showToast('Invalid QR code format', 'error');
     }
